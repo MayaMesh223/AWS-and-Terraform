@@ -1,23 +1,39 @@
-provider "aws" {
-  access_key = "my-access-key"
-  secret_key = "my-secret-key"
-  region     = "us-east-1"
+# variables
+
+variable "aws_access_key" {}
+variable "aws_secret_key" {}
+variable "region" {
+  default = "us-east-1"
 }
+
+# provider
+
+provider "aws" {
+  access_key = var.aws_access_key
+  secret_key = var.aws_secret_key
+  region     = var.region
+}
+
+# resources 
 
 resource "aws_security_group" "sg_22_80" {
   name = "sg_22"
+  vpc_id = aws_default_vpc.default.id
+
   ingress {
       from_port   = 22
       to_port     = 22
       protocol    = "tcp"
       cidr_blocks = ["0.0.0.0/0"]
   }
+
   ingress {
       from_port   = 80
       to_port     = 80
       protocol    = "tcp"
       cidr_blocks = ["0.0.0.0/0"]
   }
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -48,7 +64,14 @@ resource "aws_instance" "ec2-1" {
 	volume_type = "gp2"
 	delete_on_termination = true
 	}
-	
+  
+  connection {
+    type = "ssh"
+    user = "ec2-user"
+	host = "self.public_ip"
+    private_key = "${file("~/.ssh/id_rsa")}"
+  }
+
   provisioner "remote-exec" {
     inline = [
       "sudo amazon-linux-extras enable nginx1.12",
@@ -57,18 +80,11 @@ resource "aws_instance" "ec2-1" {
     ]
   }
   
-  connection {
-    type = "ssh"
-    user = "ubuntu"
-	host = "self.public_ip"
-    private_key = "${file("~/.ssh/id_rsa")}"
-  }
 }
 
 resource "aws_instance" "ec2-2" {
   ami = "ami-2757f631"
   instance_type = "t2.medium"
-  vpc_security_group_ids = ["${aws_security_group.sg_22_80.id}"]
   tags = {
 	name = "ec2-2"
 	owner = "Maya"
@@ -87,19 +103,19 @@ resource "aws_instance" "ec2-2" {
 	volume_type = "gp2"
 	delete_on_termination = true
 	}
-	
+
+  connection {
+    type = "ssh"
+    user = "ec2-user"
+	host = "self.public_ip"
+    private_key = "${file("~/.ssh/id_rsa")}"
+  }
+  
   provisioner "remote-exec" {
     inline = [
       "sudo amazon-linux-extras enable nginx1.12",
       "sudo yum -y install nginx",
       "sudo systemctl start nginx",
     ]
-  }
-  
-  connection {
-    type = "ssh"
-    user = "ubuntu"
-	host = "self.public_ip"
-    private_key = "${file("~/.ssh/id_rsa")}"
   }
  }
