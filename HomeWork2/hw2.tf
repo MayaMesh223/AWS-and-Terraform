@@ -1,8 +1,12 @@
+#provider
+
 provider "aws" {
-  access_key = var.aws_access_key
-  secret_key = var.aws_secret_key
-  region     = var.region
+  access_key = "${var.aws_access_key}"
+  secret_key = "${var.aws_secret_key}"
+  region     = "${var.aws_region}"
 }
+
+#resources
 
 resource "aws_vpc" "main_vpc" {
   cidr_block = "${var.vpc_cidr}"
@@ -50,113 +54,129 @@ resource "aws_route_table_association" "web_public_rt" {
   route_table_id = "${aws_route_table.web_public_rt.id}"
 }
 
+#public sg (web)
+
 resource "aws_security_group" "sgweb" {
+  name = "vpc_web_sg"
+  vpc_id = "${aws_vpc.default.id}"
+
+  ingress {
+      from_port   = 22
+      to_port     = 22
+      protocol    = "tcp"
+      cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+      from_port   = 443
+      to_port     = 443
+      protocol    = "tcp"
+      cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+      from_port   = 80
+      to_port     = 80
+      protocol    = "tcp"
+      cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+      from_port   = -1
+      to_port     = -1
+      protocol    = "icmp"
+      cidr_blocks = ["0.0.0.0/0"]
+  }
   
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  tags {
+    name = "Web Server SG"
+  }
 }
 
+#private sg (db)
 
+resource "aws_security_group" "sgdb" {
+  name = "vpc_db_sg"
+  vpc_id = "${aws_vpc.default.id}"
 
+  ingress {
+      from_port   = 3306
+      to_port     = 3306
+      protocol    = "tcp"
+      cidr_blocks = ["${var.public_subnet}"]
+  }
 
-# resource "aws_security_group" "sg_22_80" {
-#   name = "sg_22"
-#   #vpc_id = aws_default_vpc.default.id
+  ingress {
+      from_port   = 22
+      to_port     = 22
+      protocol    = "tcp"
+      cidr_blocks = ["${var.public_subnet}"]
+  }
 
-#   ingress {
-#       from_port   = 22
-#       to_port     = 22
-#       protocol    = "tcp"
-#       cidr_blocks = ["0.0.0.0/0"]
-#   }
-
-#   ingress {
-#       from_port   = 80
-#       to_port     = 80
-#       protocol    = "tcp"
-#       cidr_blocks = ["0.0.0.0/0"]
-#   }
-
-#   egress {
-#     from_port   = 0
-#     to_port     = 0
-#     protocol    = "-1"
-#     cidr_blocks = ["0.0.0.0/0"]
-#   }
-# }
-
-# resource "aws_instance" "ec2-1" {
-#   ami = "ami-2757f631"
-#   instance_type = "t2.medium"
-#   vpc_security_group_ids = ["${aws_security_group.sg_22_80.id}"]
-#   tags = {
-# 	name = "ec2-1"
-# 	owner = "me"
-# 	purpose = "study"
-# 	}
+  ingress {
+      from_port   = -1
+      to_port     = -1
+      protocol    = "icmp"
+      cidr_blocks = ["${var.public_subnet}"]
+  }
   
-#   root_block_device {
-#     volume_type = "gp2"
-#     volume_size = 10
-#   }
-  
-#   ebs_block_device {
-#     device_name = "/dev/sda1"  
-# 	volume_size = 10
-# 	encrypted = true
-# 	volume_type = "gp2"
-# 	delete_on_termination = true
-# 	}
-  
-#   connection {
-#     type = "ssh"
-#     user = "ec2-user"
-# 	host = "self.public_ip"
-#     private_key = "${file("~/.ssh/id_rsa")}"
-#   }
+  tags {
+    name = "DB Server SG"
+  }
+}
 
-#   provisioner "remote-exec" {
-#     inline = [
-#       "sudo amazon-linux-extras enable nginx1.12",
-#       "sudo yum -y install nginx",
-#       "sudo systemctl start nginx",
-#     ]
-#   }
-  
-# }
+#instances
 
-# resource "aws_instance" "ec2-2" {
-#   ami = "ami-2757f631"
-#   instance_type = "t2.medium"
-#   tags = {
-# 	name = "ec2-2"
-# 	owner = "Maya"
-# 	purpose = "learn"
-# 	}
-  
-#   root_block_device {
-#     volume_type = "gp2"
-#     volume_size = 10
-#   }
-  
-#   ebs_block_device {
-#     device_name = "/dev/sdg"  
-# 	volume_size = 10
-# 	encrypted = true
-# 	volume_type = "gp2"
-# 	delete_on_termination = true
-# 	}
+resource "aws_instance" "web1" {
+  ami = "${var.ami}"
+  instance_type = "t1.micro"
+  subnet_id = "${aws_subnet.public_subnet.id}"
+  vpc_security_group_ids = ["${aws_security_group.sgweb.id}"]
+  associate_public_ip_address = true
+  availability_zone = "${var.az1.default}"
+  tags = {
+	  name = "web1"
+		}
+}
 
-#   connection {
-#     type = "ssh"
-#     user = "ec2-user"
-# 	host = "self.public_ip"
-#     private_key = "${file("~/.ssh/id_rsa")}"
-#   }
+resource "aws_instance" "web2" {
+  ami = "${var.ami}"
+  instance_type = "t1.micro"
+  subnet_id = "${aws_subnet.public_subnet.id}"
+  vpc_security_group_ids = ["${aws_security_group.sgweb.id}"]
+  associate_public_ip_address = true
+  availability_zone = "${var.az2.default}"
+  tags = {
+	  name = "web2"
+		}
+}
+
+resource "aws_instance" "db1" {
+  ami = "${var.ami}"
+  instance_type = "t1.micro"
+  subnet_id = "${aws_subnet.private_subnet.id}"
+  vpc_security_group_ids = ["${aws_security_group.sgdb.id}"]
+  availability_zone = "${var.az1.default}"
   
-#   provisioner "remote-exec" {
-#     inline = [
-#       "sudo amazon-linux-extras enable nginx1.12",
-#       "sudo yum -y install nginx",
-#       "sudo systemctl start nginx",
-#     ]
-#   }
-#  }
+  tags = {
+	  name = "db1"
+		}
+}   
+
+resource "aws_instance" "db2" {
+  ami = "${var.ami}"
+  instance_type = "t1.micro"
+  subnet_id = "${aws_subnet.private_subnet.id}"
+  vpc_security_group_ids = ["${aws_security_group.sgdb.id}"]
+  availability_zone = "${var.az2.default}"
+  
+  tags = {
+	  name = "db2"
+		}
+}
