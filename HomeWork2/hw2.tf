@@ -1,182 +1,296 @@
-#provider
-
+# provider
 provider "aws" {
-  access_key = "${var.aws_access_key}"
-  secret_key = "${var.aws_secret_key}"
   region     = "${var.aws_region}"
 }
 
 #resources
-
+# Create vpc
 resource "aws_vpc" "main_vpc" {
   cidr_block = "${var.vpc_cidr}"
-  tags {
-    name = "web_vpc"
-    }
+  tags = {
+    name = "main_vpc"
+  }
 }
 
-resource "aws_subnet" "public_subnet" {
-  vpc_id = "${aws_vpc.default.id}"
-  cidr_block = "${var.public_subnet}"
-  availability_zone = "us-east-1a"
-  tags {
-    name = "web_public_subnet"
-    }
+# Create public subnets
+resource "aws_subnet" "public_subnet1" {
+  vpc_id            = "${aws_vpc.main_vpc.id}"
+  cidr_block        = "${var.public_subnet1}"
+  availability_zone = "${var.az1}"
+  tags = {
+    name = "public_subnet1"
+  }
 }
 
-resource "aws_subnet" "private_subnet" {
-  vpc_id = "${aws_vpc.default.id}"
-  cidr_block = "${var.private_subnet}"
-  availability_zone = "us-east-1a"
-  tags {
-    name = "db_private_subnet"
-   }
+resource "aws_subnet" "public_subnet2" {
+  vpc_id            = "${aws_vpc.main_vpc.id}"
+  cidr_block        = "${var.public_subnet2}"
+  availability_zone = "${var.az2}"
+  tags = {
+    name = "public_subnet2"
+  }
 }
 
-resource "aws_internet_gateway" "gw" {
-  vpc_id = "${aws_vpc.default.id}"
-  tags {
+# Create private subnets
+resource "aws_subnet" "private_subnet1" {
+  vpc_id            = "${aws_vpc.main_vpc.id}"
+  cidr_block        = "${var.private_subnet1}"
+  availability_zone = "${var.az1}"
+  tags = {
+    name = "private_subnet1"
+  }
+}
+
+resource "aws_subnet" "private_subnet2" {
+  vpc_id            = "${aws_vpc.main_vpc.id}"
+  cidr_block        = "${var.private_subnet2}"
+  availability_zone = "${var.az2}"
+  tags = {
+    name = "private_subnet2"
+  }
+}
+
+# Create internet gateway
+resource "aws_internet_gateway" "igw" {
+  vpc_id = "${aws_vpc.main_vpc.id}"
+  tags = {
     name = "vpc_igw"
-   }
+  }
 }
 
-resource "aws_route_table" "web_public_rt" {
-  vpc_id = "${aws_vpc.default.id}"
-  cidr_block = "0.0.0.0/0"
-  gateway_id = "${aws_internet_gateway.default.id}"
-  tags {
-    name = "public_subnet_rt"
-   }
+# Create route tsble for public subnet
+resource "aws_route_table" "public_rt" {
+  vpc_id     = "${aws_vpc.main_vpc.id}"
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = "${aws_internet_gateway.igw.id}"
+  }
+  tags = {
+    name = "public_rt"
+  }
 }
 
-resource "aws_route_table_association" "web_public_rt" {
-  subnet_id = "${aws_subnet.public_subnet.id}"
-  route_table_id = "${aws_route_table.web_public_rt.id}"
+# Route table association for public subnets
+resource "aws_route_table_association" "public_rt1" {
+  subnet_id      = "${aws_subnet.public_subnet1.id}"
+  route_table_id = "${aws_route_table.public_rt.id}"
 }
 
-#public sg (web)
+resource "aws_route_table_association" "public_rt2" {
+  subnet_id      = "${aws_subnet.public_subnet2.id}"
+  route_table_id = "${aws_route_table.public_rt.id}"
+}
 
-resource "aws_security_group" "sgweb" {
-  name = "vpc_web_sg"
-  vpc_id = "${aws_vpc.default.id}"
+#Create NAT gateway
+resource "aws_instance" "public_nat1" {
+  ami                         = "ami-04b9e92b5572fa0d1"
+  instance_type               = "t2.micro"
+  vpc_security_group_ids      = ["${aws_security_group.vpc_sg.id}"]
+  subnet_id                   = "${aws_subnet.public_subnet1.id}"
+  associate_public_ip_address = true
+  tags = {
+    Name = "public_nat1"
+  }
+}
+
+resource "aws_eip" "public_nat1" {
+  instance = "${aws_instance.public_nat1.id}"
+  vpc      = true
+  tags = {
+    Name = "public_nat1"
+  }
+}
+
+resource "aws_instance" "public_nat2" {
+  ami                         = "${var.ami}"
+  instance_type               = "t2.micro"
+  vpc_security_group_ids      = ["${aws_security_group.vpc_sg.id}"]
+  subnet_id                   = "${aws_subnet.public_subnet2.id}"
+  associate_public_ip_address = true
+  tags = {
+    Name = "public_nat2"
+  }
+}
+
+resource "aws_eip" "public_nat2" {
+  instance = "${aws_instance.public_nat2.id}"
+  vpc      = true
+  tags = {
+    Name = "public_nat2"
+  }
+}
+
+# Create route tables for private subnet
+resource "aws_route_table" "private_rt1" {
+  vpc_id     = "${aws_vpc.main_vpc.id}"
+  route {
+    cidr_block = "0.0.0.0/0"
+    instance_id = "${aws_instance.public_nat1.id}"
+  }
+  tags = {
+    name = "private_rt1"
+  }
+}
+
+resource "aws_route_table" "private_rt2" {
+  vpc_id     = "${aws_vpc.main_vpc.id}"
+  route {
+    cidr_block = "0.0.0.0/0"
+    instance_id = "${aws_instance.public_nat2.id}"
+  }
+  tags = {
+    name = "private_rt2"
+  }
+}
+
+# Route table association for private subnets
+resource "aws_route_table_association" "private_rt1" {
+  subnet_id      = "${aws_subnet.private_subnet1.id}"
+  route_table_id = "${aws_route_table.private_rt1.id}"
+}
+
+resource "aws_route_table_association" "private_rt2" {
+  subnet_id      = "${aws_subnet.private_subnet2.id}"
+  route_table_id = "${aws_route_table.private_rt2.id}"
+}
+
+# Public security group (web)
+
+resource "aws_security_group" "vpc_sg" {
+  name   = "vpc_sg"
+  vpc_id = "${aws_vpc.main_vpc.id}"
 
   ingress {
-      from_port   = 22
-      to_port     = 22
-      protocol    = "tcp"
-      cidr_blocks = ["0.0.0.0/0"]
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   ingress {
-      from_port   = 443
-      to_port     = 443
-      protocol    = "tcp"
-      cidr_blocks = ["0.0.0.0/0"]
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   ingress {
-      from_port   = 80
-      to_port     = 80
-      protocol    = "tcp"
-      cidr_blocks = ["0.0.0.0/0"]
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   ingress {
-      from_port   = -1
-      to_port     = -1
-      protocol    = "icmp"
-      cidr_blocks = ["0.0.0.0/0"]
+    from_port   = -1
+    to_port     = -1
+    protocol    = "icmp"
+    cidr_blocks = ["0.0.0.0/0"]
   }
-  
+
   egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
-  tags {
+  tags = {
     name = "Web Server SG"
   }
 }
 
 #private sg (db)
 
-resource "aws_security_group" "sgdb" {
-  name = "vpc_db_sg"
-  vpc_id = "${aws_vpc.default.id}"
+# resource "aws_security_group" "sgdb" {
+#   name   = "vpc_db_sg"
+#   vpc_id = "${aws_vpc.default.id}"
 
-  ingress {
-      from_port   = 3306
-      to_port     = 3306
-      protocol    = "tcp"
-      cidr_blocks = ["${var.public_subnet}"]
-  }
+#   ingress {
+#     from_port   = 3306
+#     to_port     = 3306
+#     protocol    = "tcp"
+#     cidr_blocks = ["${var.public_subnet}"]
+#   }
 
-  ingress {
-      from_port   = 22
-      to_port     = 22
-      protocol    = "tcp"
-      cidr_blocks = ["${var.public_subnet}"]
-  }
+#   ingress {
+#     from_port   = 22
+#     to_port     = 22
+#     protocol    = "tcp"
+#     cidr_blocks = ["${var.public_subnet}"]
+#   }
 
-  ingress {
-      from_port   = -1
-      to_port     = -1
-      protocol    = "icmp"
-      cidr_blocks = ["${var.public_subnet}"]
-  }
-  
-  tags {
-    name = "DB Server SG"
-  }
-}
+#   ingress {
+#     from_port   = -1
+#     to_port     = -1
+#     protocol    = "icmp"
+#     cidr_blocks = ["${var.public_subnet}"]
+#   }
 
-#instances
+#   tags = {
+#     name = "DB Server SG"
+#   }
+# }
+
+# EC2 instances
 
 resource "aws_instance" "web1" {
-  ami = "${var.ami}"
-  instance_type = "t1.micro"
-  subnet_id = "${aws_subnet.public_subnet.id}"
-  vpc_security_group_ids = ["${aws_security_group.sgweb.id}"]
+  ami                         = "${var.ami}"
+  instance_type               = "t1.micro"
+  subnet_id                   = "${aws_subnet.public_subnet1.id}"
+  vpc_security_group_ids      = ["${aws_security_group.vpc_sg.id}"]
   associate_public_ip_address = true
-  availability_zone = "${var.az1.default}"
+  availability_zone           = "${var.az1}"
   tags = {
-	  name = "web1"
-		}
+    name = "web1"
+  }
+
+  connection {
+    	type = "ssh"
+    	host = "self.public_ip"
+	  user = "ubuntu"
+	  private_key = "${file("C:\\Maya_Mesh\\.ssh\\Maya.pem")}"
+  }
 }
 
 resource "aws_instance" "web2" {
-  ami = "${var.ami}"
-  instance_type = "t1.micro"
-  subnet_id = "${aws_subnet.public_subnet.id}"
-  vpc_security_group_ids = ["${aws_security_group.sgweb.id}"]
+  ami                         = "${var.ami}"
+  instance_type               = "t1.micro"
+  subnet_id                   = "${aws_subnet.public_subnet2.id}"
+  vpc_security_group_ids      = ["${aws_security_group.vpc_sg.id}"]
   associate_public_ip_address = true
-  availability_zone = "${var.az2.default}"
+  availability_zone           = "${var.az2}"
   tags = {
-	  name = "web2"
-		}
+    name = "web2"
+  }
+
+  connection {
+    type = "ssh"
+    host = "self.public_ip"
+	  user = "ubuntu"
+	  private_key = "${file("C:\\Maya_Mesh\\.ssh\\Maya.pem")}"
+  }
 }
 
 resource "aws_instance" "db1" {
-  ami = "${var.ami}"
-  instance_type = "t1.micro"
-  subnet_id = "${aws_subnet.private_subnet.id}"
-  vpc_security_group_ids = ["${aws_security_group.sgdb.id}"]
-  availability_zone = "${var.az1.default}"
-  
+  ami                    = "${var.ami}"
+  instance_type          = "t1.micro"
+  subnet_id              = "${aws_subnet.private_subnet1.id}"
+  vpc_security_group_ids = ["${aws_security_group.vpc_sg.id}"]
+  availability_zone      = "${var.az1}"
+
   tags = {
-	  name = "db1"
-		}
-}   
+    name = "db1"
+  }
+}
 
 resource "aws_instance" "db2" {
-  ami = "${var.ami}"
-  instance_type = "t1.micro"
-  subnet_id = "${aws_subnet.private_subnet.id}"
-  vpc_security_group_ids = ["${aws_security_group.sgdb.id}"]
-  availability_zone = "${var.az2.default}"
-  
+  ami                    = "${var.ami}"
+  instance_type          = "t1.micro"
+  subnet_id              = "${aws_subnet.private_subnet2.id}"
+  vpc_security_group_ids = ["${aws_security_group.vpc_sg.id}"]
+  availability_zone      = "${var.az2}"
+
   tags = {
-	  name = "db2"
-		}
+    name = "db2"
+  }
 }
